@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+folium
+pulp
+streamlit-folium
+xlsxwriter
+matplotlib
