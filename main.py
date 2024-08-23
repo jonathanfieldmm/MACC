@@ -1,202 +1,153 @@
+# Using this file: 
+# When you run this file, you will be prompted to paste in the path file of the data. This will be in a format C:\Users\....\....\.....\File name.xlsx (or csv)
+# The x-axis will adjust to fit the provided data, the range for the y-axis can be adjusted in line 116
+
+
+###################################
+
+# libraries used
 import pandas as pd
-from pulp import LpProblem, LpMinimize, LpVariable, lpSum, LpStatus
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt 
+import matplotlib
+#import mplcursors
+from pylab import *
+import matplotlib.patches as mpatches
 
-import conventional_gen as cg
-import results_and_plotting as rp
-# Define the number of weeks
-number_of_weeks = 1
+# function for position depending on width
+def y_pos1(width):
+    # initialising a
+    a = np.zeros(len(width))
+    # starting from width/2
+    a[0] = width[0]/2
+    # for loop to get midpoint for each bar
+    for i in range(1,len(width)):
+        a[i] = a[i-1] + 1.0/2*width[i] + 1.0/2*width[i-1]
+    return a
 
-# Load the demand profile and generation profiles from the Excel files
-demand_profile = pd.read_excel('demand_profile.xlsx', header=0)
-generation_profiles = pd.read_excel('generation_profiles.xlsx', header=0)
+# defining the Mott MacDonald colour scheme
+#MM_colour_list = [' #2fb6bc', '#2b86c7', '#afc236', '#ff278d', '#ffd400', '#e95a1a', ' #009695', '#216b99', '#41ac4c', '#8e3f91', '#f8ac04', '#e42925', '#c9c2bf', '#575756']
+#quick fix of selecting number of colours as there are categories, and can feed in from this order
+MM_colour_list_RGB = [(47, 182, 255),   #288 changed to 255
+                      (43, 134, 199),
+                      (175, 194, 54),
+                      (225, 39, 141),
+                      (255, 212, 0),
+                      (233, 90, 26),
+                      (0, 150, 149)]#,
+                     # (33, 107, 153),
+                     # (65, 172, 76),
+                     # (142, 63, 145),
+                     # (248, 172, 4),
+                    #  (228, 41, 37),
+                    #  (201, 194, 191),
+                    #  (87, 87, 86)]
 
-# Extend the data for the number of weeks
-demand_profile = pd.concat([demand_profile] * number_of_weeks, ignore_index=True)
-generation_profiles = pd.concat([generation_profiles] * number_of_weeks, ignore_index=True)
-
-# Define capacities for wind and solar (in MW)
-capacity_wind = 20
-capacity_solar = 20
-
-# Calculate the actual generation profiles by multiplying capacity factors by the defined capacities
-solar_generation = generation_profiles['Solar Capacity Factor'] * capacity_solar
-wind_generation = generation_profiles['Wind Capacity Factor'] * capacity_wind
-
-# Extract the demand profile
-demand = demand_profile['Demand']
-
-# Ensure the data is in the correct format (168 * number_of_weeks hourly intervals)
-time_horizon = 168 * number_of_weeks
-data = pd.DataFrame({
-    'Solar Generation (MW)': solar_generation,
-    'Wind Generation (MW)': wind_generation,
-    'Demand (MW)': demand
-})
+# Convert RGB values to 0-1 range
+normalise_rgb_colours = [(r / 255, g / 255, b / 255) for r, g, b in MM_colour_list_RGB]
 
 
-# Storage efficiencies and capacities
-efficiency_ldes = 0.85
-efficiency_sdes = 0.9
-efficiency_hydrogen = 0.75
-
-capacity_ldes = 1000  # in MWh
-capacity_sdes = 500   # in MWh
-capacity_hydrogen = 1500  # in MWh
-
-# Costs (example values)
-cost_solar = 10  # £/MWh
-cost_wind = 15  # £/MWh
-cost_ldes_charge = 5  # £/MWh
-cost_ldes_discharge = 7  # £/MWh
-cost_sdes_charge = 3  # £/MWh
-cost_sdes_discharge = 5  # £/MWh
-cost_hydrogen_charge = 8  # £/MWh
-cost_hydrogen_discharge = 10  # £/MWh
-cost_unmet_demand = 100  # £/MWh for unmet demand (high penalty)
-cost_curtailment = 5
-
-# Create the LP problem
-prob = LpProblem("Least_Cost_Dispatch", LpMinimize)
-
-# Add conventional generation to the optimization problem
-Gen_Gas, Gen_Coal, Gen_Nuclear, Gen_Hydro = cg.add_conventional_generation(prob, data, time_horizon)
-
-# Add demand response to the optimization problem
-Shift_Down, Shift_Up = cg.add_demand_response(prob, data, time_horizon)
-# Solve the optimization problem
-
-# Define decision variables
-Charge_LDES = LpVariable.dicts("Charge_LDES", range(time_horizon), lowBound=0, cat='Continuous')
-Discharge_LDES = LpVariable.dicts("Discharge_LDES", range(time_horizon), lowBound=0, cat='Continuous')
-
-Charge_SDES = LpVariable.dicts("Charge_SDES", range(time_horizon), lowBound=0, cat='Continuous')
-Discharge_SDES = LpVariable.dicts("Discharge_SDES", range(time_horizon), lowBound=0, cat='Continuous')
-
-Charge_Hydrogen = LpVariable.dicts("Charge_Hydrogen", range(time_horizon), lowBound=0, cat='Continuous')
-Discharge_Hydrogen = LpVariable.dicts("Discharge_Hydrogen", range(time_horizon), lowBound=0, cat='Continuous')
-
-Unmet_Demand = LpVariable.dicts("Unmet_Demand", range(time_horizon), lowBound=0, cat='Continuous')
-Curtailment = LpVariable.dicts("Curtailment", range(time_horizon), lowBound=0, cat='Continuous')
-
-# Objective: Minimize the total cost of generation, charging, discharging, and unmet demand
-prob += lpSum([
-    cost_solar * data['Solar Generation (MW)'][t] +
-    cost_wind * data['Wind Generation (MW)'][t] +
-    cost_ldes_charge * Charge_LDES[t] +
-    cost_ldes_discharge * Discharge_LDES[t] +
-    cost_sdes_charge * Charge_SDES[t] +
-    cost_sdes_discharge * Discharge_SDES[t] +
-    cost_hydrogen_charge * Charge_Hydrogen[t] +
-    cost_hydrogen_discharge * Discharge_Hydrogen[t] +
-    cost_unmet_demand * Unmet_Demand[t] +
-    cost_curtailment * Curtailment[t]
-    for t in range(time_horizon)
-]), "Total_Cost"
-
-# Set the initial state of charge (SOC) for each storage type to zero
-SOC_LDES = {0: 0}
-SOC_SDES = {0: 0}
-SOC_Hydrogen = {0: 0}
-
-# Additional constraint to ensure storage discharge only happens to meet demand
-for t in range(1, time_horizon):
-    # Define the SOC for each storage at time t
-    SOC_LDES[t] = LpVariable(f"SOC_LDES_{t}", lowBound=0, upBound=capacity_ldes)
-    SOC_SDES[t] = LpVariable(f"SOC_SDES_{t}", lowBound=0, upBound=capacity_sdes)
-    SOC_Hydrogen[t] = LpVariable(f"SOC_Hydrogen_{t}", lowBound=0, upBound=capacity_hydrogen)
-
-    # Storage dynamics
-    prob += SOC_LDES[t] == SOC_LDES[t-1] + Charge_LDES[t] * efficiency_ldes - Discharge_LDES[t] * (1 / efficiency_ldes), f"LDES_SOC_{t}"
-    prob += SOC_SDES[t] == SOC_SDES[t-1] + Charge_SDES[t] * efficiency_sdes - Discharge_SDES[t] * (1 / efficiency_sdes), f"SDES_SOC_{t}"
-    prob += SOC_Hydrogen[t] == SOC_Hydrogen[t-1] + Charge_Hydrogen[t] * efficiency_hydrogen - Discharge_Hydrogen[t] * (1 / efficiency_hydrogen), f"Hydrogen_SOC_{t}"
-
-    # Ensure that the discharge from storage does not exceed the available SOC at that time
-    prob += Discharge_LDES[t] <= SOC_LDES[t-1], f"LDES_Discharge_Limit_{t}"
-    prob += Discharge_SDES[t] <= SOC_SDES[t-1], f"SDES_Discharge_Limit_{t}"
-    prob += Discharge_Hydrogen[t] <= SOC_Hydrogen[t-1], f"Hydrogen_Discharge_Limit_{t}"
-
-    # Discharge can only happen to meet demand
-    prob += Discharge_LDES[t] <= data['Demand (MW)'][t], f"LDES_Discharge_Meets_Demand_{t}"
-    prob += Discharge_SDES[t] <= data['Demand (MW)'][t], f"SDES_Discharge_Meets_Demand_{t}"
-    prob += Discharge_Hydrogen[t] <= data['Demand (MW)'][t], f"Hydrogen_Discharge_Meets_Demand_{t}"
-
-    # Capacity constraints
-    prob += SOC_LDES[t] <= capacity_ldes, f"LDES_Capacity_{t}"
-    prob += SOC_SDES[t] <= capacity_sdes, f"SDES_Capacity_{t}"
-    prob += SOC_Hydrogen[t] <= capacity_hydrogen, f"Hydrogen_Capacity_{t}"
+# function to customize legend
+def leg_handles(dataframe):
+    # initialisation
+    a = []
+    # for loop to add the different columns
+    for i in range(len(dataframe)):
+        patch = mpatches.Patch(color=dataframe.iloc[i,1], label=dataframe.iloc[i,0])
+        # appending each category with colour
+        a.append(patch)
+    return a
 
     
 
-   # Demand-Supply Constraint with Unmet Demand and Curtailed Energy
-for t in range(time_horizon):
-    prob += (
-        data['Solar Generation (MW)'][t] +
-        data['Wind Generation (MW)'][t] +
-        Discharge_LDES[t] +
-        Discharge_SDES[t] +
-        Discharge_Hydrogen[t] +
-        Gen_Gas[t] +
-        Gen_Coal[t] +
-        Gen_Nuclear[t] +
-        Gen_Hydro[t] +
-        Unmet_Demand[t]
-        == data['Demand (MW)'][t] +
-        Charge_LDES[t] +
-        Charge_SDES[t] +
-        Charge_Hydrogen[t] +
-        Curtailment[t]  # Add curtailment to ensure excess generation is handled
-    ), f"Demand_Supply_Constraint_{t}"
+# need to have Column1, Column2, Column3 and Column 4 in the following order: Category, Option, MtCO2, £/tCO2
+def macc_function(path_file, sheetname, starting_rows, Column1, Column2, Column3, Column4):
+    # reading the excel file, need to define path, sheet_name, starting rows
+    df = pd.read_excel (path_file,sheet_name=sheetname,skiprows=starting_rows)
+    # taking the names of the particular columns (need to define them and putting them in a smaller dataframe
+    df1 = df[[Column1,Column2,Column3, Column4]]
+    # dropping na values
+    df1 = df1.dropna()
+    # sorting in ascending order
+    df1 = df1.sort_values(by=Column4, ascending=True)
+    # hierarchy category
+    category = df1.iloc[:,0:1].values.squeeze()
+    # finding the values for height, bars, width and position
+    height = df1.iloc[:,3:].values.squeeze()
+    #bars = ["%s" %i for i in range(len(height))]
+    bars = df1.iloc[:,1:2].values.squeeze()
+    # Choose the width of each bar and their positions
+    width = df1.iloc[:,2:3].values.squeeze()
+    # turning negative values to positive
+    width = np.array([abs(i) if i < 0 else i for i in width])
+    #defining the position    
+    y_pos = y_pos1(width)
+    # number of distinct categories (to be used as colours)
+    ndistinct = df1[Column1].nunique()
+    # creating a dataframe for the distinct colours (Column1 = Category)
+    d = {Column1: df1[Column1].unique(), 'Colour': normalise_rgb_colours}
+    df2 = pd.DataFrame(data=d)
+    # new df1 by merging colours with existing dataframe (left join)
+    df1 = pd.merge(df1,df2,on=Column1,how='left')
+    # defining different colours 
+    colours = df1.iloc[:,4]
+   
+    # Make the plot
+    # Set the desired thickness of the edge color (outline)
+    edge_thickness = 0.5
+    #colours = matplotlib.cm.rainbow(np.linspace(0, 1, 7))
+    plt.bar(y_pos, height, width = width,color = colours, edgecolor='black', linewidth=edge_thickness)
+    # add width (MtCO2e) data labels to each bar
+    for i in range(len(width)):
+       if i == 0:
+           plt.text(y_pos[i], height[i]+1.2, f"{width[i]:.2f}", ha='center', va='bottom', fontsize=5, rotation=90)
+       else:
+           plt.text(y_pos[i], height[i]+0.5, f"{width[i]:.2f}", ha='center', va='bottom', fontsize=5, rotation=90)
+    # plt.xticks(y_pos,bars)
+    # removing width labels from x-axis
+    # plt.xticks([])
+    plt.axhline(0, color='black', linewidth=0.5)
+    plt.xticks()
+    plt.xticks(rotation=90, fontsize=6)
+    plt.yticks(fontsize=8)
+    # Add title and axis names
+    plt.title('MACC 2019')
+    # y-axis title
+    plt.ylabel('GBP/tCO$_2$e', fontname="Arial")
+    # x-axis title
+    plt.xlabel('ktCO$_2$e')
+    #Limits for the X axis
+    # adjust the width of the x-axis to fit the data
+    plt.xlim(y_pos.min() - 0.5* width[0], y_pos.max() + 0.5* width[-1])
+    #plt.xlim(0,140)
+    # Limits for the Y axis
+    plt.ylim(-2,16)
+    # hover on option
+    #mplcursors.cursor(hover=True).connect( "add", lambda sel: sel.annotation.set(text=f"Category: {category[sel.target.index]}\nOption: {bars[sel.target.index]}\nUSD/tCO$_2$e: {height[sel.target.index]}")) 
+    # legend
+    legend_handles = leg_handles(df2)
+    plt.legend(handles=legend_handles, fontsize=8)
+    #plt.legend(loc="best")
+    # Adjust the appearance of the spines
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)  # Hide the top spine (axis line)
+    ax.spines['right'].set_visible(False)  # Hide the right spine (axis line)
+    #show
+    plt.show()
+    plt.savefig("MACC_v1_DfT_2019.png",bbox_inches="tight")
+    plt.show()
 
-# Final state of charge must be within capacity limits
-prob += SOC_LDES[time_horizon-1] <= capacity_ldes, "Final_LDES_SOC"
-prob += SOC_SDES[time_horizon-1] <= capacity_sdes, "Final_SDES_SOC"
-prob += SOC_Hydrogen[time_horizon-1] <= capacity_hydrogen, "Final_Hydrogen_SOC"
 
-# Solve the optimization problem
-prob.solve()
 
-print("Status:", LpStatus[prob.status])
-
-# Call functions from results_and_plotting.py
-rp.display_results(time_horizon, data, Discharge_LDES, Discharge_SDES, Discharge_Hydrogen, 
-                   Gen_Gas, Gen_Coal, Gen_Nuclear, Gen_Hydro, Unmet_Demand, Curtailment, 
-                   Charge_LDES, Charge_SDES, Charge_Hydrogen)
-
-rp.plot_results(time_horizon, data, Discharge_LDES, Discharge_SDES, Discharge_Hydrogen, 
-                Gen_Gas, Gen_Coal, Gen_Nuclear, Gen_Hydro, Unmet_Demand)
-
-rp.plot_soc(time_horizon, SOC_LDES, SOC_SDES, SOC_Hydrogen)
-
-rp.plot_energy_flow(time_horizon, data, Discharge_LDES, Discharge_SDES, Discharge_Hydrogen, 
-                    Gen_Gas, Gen_Coal, Gen_Nuclear, Gen_Hydro, Charge_LDES, Charge_SDES, 
-                    Charge_Hydrogen, Unmet_Demand)
-# Generate the comprehensive report
-rp.generate_report(
-    filename='optimization_report.xlsx',
-    time_horizon=time_horizon,
-    data=data,
-    Discharge_LDES=Discharge_LDES,
-    Discharge_SDES=Discharge_SDES,
-    Discharge_Hydrogen=Discharge_Hydrogen,
-    Gen_Gas=Gen_Gas,
-    Gen_Coal=Gen_Coal,
-    Gen_Nuclear=Gen_Nuclear,
-    Gen_Hydro=Gen_Hydro,
-    Unmet_Demand=Unmet_Demand,
-    Curtailment=Curtailment,
-    Charge_LDES=Charge_LDES,
-    Charge_SDES=Charge_SDES,
-    Charge_Hydrogen=Charge_Hydrogen,
-    cost_solar=cost_solar,
-    cost_wind=cost_wind,
-    cost_ldes_charge=cost_ldes_charge,
-    cost_ldes_discharge=cost_ldes_discharge,
-    cost_sdes_charge=cost_sdes_charge,
-    cost_sdes_discharge=cost_sdes_discharge,
-    cost_hydrogen_charge=cost_hydrogen_charge,
-    cost_hydrogen_discharge=cost_hydrogen_discharge,
-    cost_unmet_demand=cost_unmet_demand,
-    cost_curtailment=cost_curtailment
-)
+################################
+# Example of inputs
+path_file = input("enter the path file of the dataset")
+sheetname = "csv_output_2019"
+starting_rows = 0 
+Column1 = "Category" 
+Column2 = "Technology Option"
+Column3 = "ktCO2e"
+Column4 = "£/tCO2e"
+ 
+# Example of output
+example = macc_function(path_file, sheetname, starting_rows, Column1, Column2, Column3, Column4)
