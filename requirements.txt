@@ -6,3 +6,5 @@ pulp
 streamlit-folium
 xlsxwriter
 matplotlib
+openpyxl
+BytesIO
