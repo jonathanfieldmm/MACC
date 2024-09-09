@@ -33,7 +33,7 @@ def normalize_rgb(color_list):
 def create_legend_handles(dataframe):
     return [mpatches.Patch(color=row[1], label=row[0]) for row in dataframe.itertuples(index=False)]
 
-# MACC plot function with dynamic legend position
+
 # MACC plot function with dynamic legend position
 def macc_plot(df, Column1, Column2, Column3, Column4, colors, font_property, line_thickness, plot_width, plot_height,
               show_technology_labels, show_axis_titles, show_chart_title, chart_title,
@@ -141,28 +141,21 @@ if uploaded_file is not None:
         plot_width = st.sidebar.slider('Plot Width', min_value=4.0, max_value=20.0, value=15.0, step=0.5)
         plot_height = st.sidebar.slider('Plot Height', min_value=4.0, max_value=15.0, value=10.0, step=0.5)
 
+    
+
         # Color customization
-        color_scheme_option = st.sidebar.selectbox('Color Scheme', options=['Default', 'Alternative', 'Custom'])
         default_colors = normalize_rgb([
             (47, 182, 255), (43, 134, 199), (175, 194, 54),
             (225, 39, 141), (255, 212, 0), (233, 90, 26), (0, 150, 149)
         ])
 
-        if color_scheme_option == 'Alternative':
-            alternative_colors = normalize_rgb([
-                (255, 99, 132), (54, 162, 235), (255, 206, 86), (75, 192, 192),
-                (153, 102, 255), (255, 159, 64), (199, 199, 199)
-            ])
-            colors = alternative_colors
-        elif color_scheme_option == 'Custom':
-            custom_colors = []
-            for idx, category in enumerate(df['Category'].unique()):
-                default_color = '#{:02x}{:02x}{:02x}'.format(*[int(c*255) for c in default_colors[idx % len(default_colors)]])
-                color = st.sidebar.color_picker(f"Pick a color for {category}", default_color)
-                custom_colors.append(tuple(int(color[i:i+2], 16) for i in (1, 3, 5)))
-            colors = normalize_rgb(custom_colors)
-        else:
-            colors = default_colors
+        custom_colors = []
+        for idx, category in enumerate(df['Category'].unique()):
+            default_color = '#{:02x}{:02x}{:02x}'.format(*[int(c*255) for c in default_colors[idx % len(default_colors)]])
+            color = st.sidebar.color_picker(f"Pick a color for {category}", default_color)
+            custom_colors.append(tuple(int(color[i:i+2], 16) for i in (1, 3, 5)))
+        colors = normalize_rgb(custom_colors)
+
 
         # Label settings
         show_technology_labels = st.sidebar.checkbox('Show Technology Labels', value=True)
