@@ -33,22 +33,24 @@ def normalize_rgb(color_list):
 def create_legend_handles(dataframe):
     return [mpatches.Patch(color=row[1], label=row[0]) for row in dataframe.itertuples(index=False)]
 
-
 # MACC plot function with dynamic legend position
 def macc_plot(df, Column1, Column2, Column3, Column4, colors, font_property, line_thickness, plot_width, plot_height,
               show_technology_labels, show_axis_titles, show_chart_title, chart_title,
               x_axis_title, y_axis_title, axis_label_font_size, axis_title_font_size,
               chart_title_font_size, technology_label_font_size, legend_font_size, reverse_order, legend_option):
     
-    df = df[[Column1, Column2, Column3, Column4, 'Label?']].dropna().sort_values(by=Column4, ascending=not reverse_order)
+    # First merge the colors to ensure the color order is not affected by sorting
+    color_df = pd.DataFrame({Column1: df[Column1].unique(), 'Colour': colors})
+    df = pd.merge(df, color_df, on=Column1, how='left')
+    
+    # Now sort based on the reverse_order option
+    df = df[[Column1, Column2, Column3, Column4, 'Label?', 'Colour']].dropna().sort_values(by=Column4, ascending=not reverse_order)
     category = df[Column1].values
     technology = df[Column2].values
     height = df[Column4].values
     width = np.abs(df[Column3].values)
     y_pos = calculate_y_positions(width)
     
-    color_df = pd.DataFrame({Column1: df[Column1].unique(), 'Colour': colors})
-    df = pd.merge(df, color_df, on=Column1, how='left')
     colors = df['Colour']
     
     plt.figure(figsize=(plot_width, plot_height))
@@ -107,8 +109,6 @@ def macc_plot(df, Column1, Column2, Column3, Column4, colors, font_property, lin
     ax.yaxis.set_tick_params(labelsize=axis_label_font_size)
     
     return plt
-
-
 
 # Streamlit app setup
 st.title('MACC Plot Viewer')
