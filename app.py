@@ -38,7 +38,7 @@ def create_legend_handles(dataframe):
 def macc_plot(df, Column1, Column2, Column3, Column4, colors, font_property, line_thickness, plot_width, plot_height,
               show_technology_labels, show_axis_titles, show_chart_title, chart_title,
               x_axis_title, y_axis_title, axis_label_font_size, axis_title_font_size,
-              chart_title_font_size, technology_label_font_size, legend_font_size, reverse_order):
+              chart_title_font_size, technology_label_font_size, legend_font_size, reverse_order, legend_option):
     
     df = df[[Column1, Column2, Column3, Column4, 'Label?']].dropna().sort_values(by=Column4, ascending=not reverse_order)
     category = df[Column1].values
@@ -90,12 +90,13 @@ def macc_plot(df, Column1, Column2, Column3, Column4, colors, font_property, lin
     plt.xlim(y_pos.min() - 0.5 * width[0], y_pos.max() + 0.5 * width[-1])
     plt.ylim(height.min() - 0.1 * np.abs(height.min()), height.max() + 0.5 * np.abs(height.max()))
     
-    legend_handles = create_legend_handles(color_df)
-    legend_y_position = 1.0
-    if show_technology_labels and max_label_height > height.max():
-        legend_y_position = 1.0 + (max_label_height - height.max()) / (plot_height * 100)
-    
-    plt.legend(handles=legend_handles, fontsize=legend_font_size, loc='upper left', bbox_to_anchor=(0, legend_y_position))
+    if legend_option:
+        legend_handles = create_legend_handles(color_df)
+        legend_y_position = 1.0
+        if show_technology_labels and max_label_height > height.max():
+            legend_y_position = 1.0 + (max_label_height - height.max()) / (plot_height * 100)
+        
+        plt.legend(handles=legend_handles, fontsize=legend_font_size, loc='upper left', bbox_to_anchor=(0, legend_y_position))
     
     ax = plt.gca()
     ax.spines['top'].set_visible(False)
@@ -106,6 +107,7 @@ def macc_plot(df, Column1, Column2, Column3, Column4, colors, font_property, lin
     ax.yaxis.set_tick_params(labelsize=axis_label_font_size)
     
     return plt
+
 
 
 # Streamlit app setup
@@ -144,6 +146,9 @@ if uploaded_file is not None:
         # Reverse order option
         reverse_order = st.sidebar.checkbox('Plot in Reverse Order', value=False)
 
+        # Include legend option
+        legend_option = st.sidebar.checkbox('Include Legend', value=True)
+
         # Color customization
         default_colors = normalize_rgb([
             (47, 182, 255), (43, 134, 199), (175, 194, 54),
@@ -178,7 +183,7 @@ if uploaded_file is not None:
         plt = macc_plot(df, 'Category', 'Technology Option', 'ktCO2e', '£/tCO2e', colors, font_property, line_thickness, plot_width, plot_height,
                         show_technology_labels, show_axis_titles, show_chart_title, chart_title,
                         x_axis_title, y_axis_title, axis_label_font_size, axis_title_font_size,
-                        chart_title_font_size, technology_label_font_size, legend_font_size, reverse_order)
+                        chart_title_font_size, technology_label_font_size, legend_font_size, reverse_order, legend_option)
         st.pyplot(plt)
 
         # Add a download button
